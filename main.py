@@ -4,11 +4,29 @@ import configparser
 import os
 import asyncio
 
-# Get the current working directory
+# Define paths
 current_directory = os.path.dirname(os.path.abspath(__file__))
+config_file = os.path.join(current_directory, 'config.ini')
 
+# Create a config file if it doesn't exist
+def create_config_file():
+    config = configparser.ConfigParser()
+    config['BOT'] = {
+        'discord_secret': 'YOUR_DISCORD_SECRET_TOKEN_HERE'
+    }
+    with open(config_file, 'w') as f:
+        config.write(f)
 
-discord_secret = "YOUR_DISCORD_SECRET_TOKEN_HERE"
+# Load configuration
+def load_config():
+    config = configparser.ConfigParser()
+    if not os.path.exists(config_file):
+        create_config_file()
+    config.read(config_file)
+    return config['BOT']['discord_secret']
+
+# Get Discord secret from config file
+discord_secret = load_config()
 
 # Intents (required for some features)
 intents = discord.Intents.default()
@@ -32,7 +50,10 @@ async def on_ready():
 # Run the bot
 async def main():
     await load_cogs()  # Load cogs before starting the bot
-    await bot.start(discord_secret)
+    try:
+        await bot.start(discord_secret)
+    except discord.errors.LoginFailure:
+        print("Failed to login. Please check your Discord token in the config file and try again.")
 
 # Start the bot
 asyncio.run(main())

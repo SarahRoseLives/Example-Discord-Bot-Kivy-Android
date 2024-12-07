@@ -1,4 +1,4 @@
-## Example Discord Bot
+## Example Discord Bot As an Android App
 
 This bot uses *cogs* to load your commands from seperate files keeping everything nice and organized.
 

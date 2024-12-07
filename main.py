@@ -1,59 +1,114 @@
-import discord
-from discord.ext import commands
 import configparser
-import os
+from kivy.lang import Builder
+from kivymd.app import MDApp
+from kivy.clock import Clock, mainthread
+from threading import Thread
+from discord.ext import commands
+import discord
 import asyncio
+import queue
+import os
 
-# Define paths
-current_directory = os.path.dirname(os.path.abspath(__file__))
-config_file = os.path.join(current_directory, 'config.ini')
+# Load KV file
+KV = """
+MDScreen:
+    MDLabel:
+        id: log_label
+        text: "Starting Discord bot..."
+        halign: "center"
+        valign: "middle"
+        font_style: "H6"
+"""
 
-# Create a config file if it doesn't exist
-def create_config_file():
-    config = configparser.ConfigParser()
-    config['BOT'] = {
-        'discord_secret': 'YOUR_DISCORD_SECRET_TOKEN_HERE'
-    }
-    with open(config_file, 'w') as f:
-        config.write(f)
+# Configuration Setup
+config = configparser.ConfigParser()
+config_path = os.path.join(os.path.dirname(__file__), "config.ini")
 
-# Load configuration
-def load_config():
-    config = configparser.ConfigParser()
-    if not os.path.exists(config_file):
-        create_config_file()
-    config.read(config_file)
-    return config['BOT']['discord_secret']
+if not os.path.exists(config_path):
+    # Create a default config.ini file if it doesn't exist
+    config["BOT"] = {"token": "YOUR_DISCORD_BOT_TOKEN_HERE"}
+    with open(config_path, "w") as configfile:
+        config.write(configfile)
+    print(f"Config file created at {config_path}. Please fill in your Discord bot token.")
+    raise SystemExit("Exiting... Add your Discord bot token in the config.ini file.")
 
-# Get Discord secret from config file
-discord_secret = load_config()
+# Load token from config.ini
+config.read(config_path)
+discord_token = config["BOT"].get("token")
 
-# Intents (required for some features)
+if not discord_token or discord_token == "YOUR_DISCORD_BOT_TOKEN_HERE":
+    raise ValueError("No valid Discord token found in the config.ini file. Update it with your bot token.")
+
+# Start Discord Bot
 intents = discord.Intents.default()
-intents.message_content = True  # Ensure you have this enabled if you want to listen to message content
-
-# Bot setup
+intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-# Load cogs
-async def load_cogs():
-    cogs_directory = os.path.join(current_directory, 'cogs')
-    for filename in os.listdir(cogs_directory):
-        if filename.endswith('.py'):
-            await bot.load_extension(f'cogs.{filename[:-3]}')
+# A thread-safe queue to send logs to the Kivy UI
+log_queue = queue.Queue()
 
-# On ready event
+# Async bot events
 @bot.event
 async def on_ready():
-    print(f'Logged in as {bot.user}')
+    log_queue.put(f"Logged in as {bot.user}")
 
-# Run the bot
-async def main():
-    await load_cogs()  # Load cogs before starting the bot
+@bot.event
+async def on_connect():
+    log_queue.put("Connecting to Discord...")
+
+@bot.event
+async def on_disconnect():
+    log_queue.put("Disconnected from Discord!")
+
+async def load_cogs():
+    """Load all cogs from the 'cogs' folder."""
+    cogs_dir = os.path.join(os.path.dirname(__file__), "cogs")
+    for filename in os.listdir(cogs_dir):
+        if filename.endswith(".py"):
+            cog_name = f"cogs.{filename[:-3]}"  # Remove '.py' and add folder name
+            try:
+                await bot.load_extension(cog_name)
+                log_queue.put(f"Loaded cog: {cog_name}")
+            except Exception as e:
+                log_queue.put(f"Failed to load cog {cog_name}: {str(e)}")
+
+async def bot_start():
     try:
-        await bot.start(discord_secret)
-    except discord.errors.LoginFailure:
-        print("Failed to login. Please check your Discord token in the config file and try again.")
+        await load_cogs()  # Load cogs before starting the bot
+        await bot.start(discord_token)  # Use token from config.ini
+    except discord.LoginFailure:
+        log_queue.put("Failed to login. Check your Discord token.")
 
-# Start the bot
-asyncio.run(main())
+def start_discord_bot():
+    asyncio.run(bot_start())
+
+# Main App
+class BotLogApp(MDApp):
+    def build(self):
+        # Load KV content
+        self.root = Builder.load_string(KV)
+        return self.root
+
+    @mainthread
+    def update_log_label(self, text):
+        """Safely update the log_label text on the UI thread."""
+        self.root.ids.log_label.text = text
+
+    def check_logs(self, dt):
+        """Check the log queue and update the Kivy UI."""
+        while not log_queue.empty():
+            log_message = log_queue.get()
+            self.update_log_label(log_message)
+
+    def on_start(self):
+        """Start Discord bot and schedule log updates."""
+        # Schedule checking the log queue
+        Clock.schedule_interval(self.check_logs, 0.5)
+
+        # Start Discord bot in a separate thread
+        bot_thread = Thread(target=start_discord_bot, daemon=True)
+        bot_thread.start()
+
+# Run the App
+if __name__ == "__main__":
+    BotLogApp().run()

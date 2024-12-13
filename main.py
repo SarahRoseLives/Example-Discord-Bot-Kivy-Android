@@ -3,11 +3,26 @@ from kivy.lang import Builder
 from kivymd.app import MDApp
 from kivy.clock import Clock, mainthread
 from threading import Thread
+
+from requests import session
+
 from discord.ext import commands
 import discord
 import asyncio
 import queue
 import os
+import ssl
+import certifi
+import aiohttp
+
+# Path to the certificate in the assets folder
+cert_path = 'discord-cert.pem'
+
+
+# Set up SSL context using the bundled cert file
+ssl_context = ssl.create_default_context(cafile=cert_path)
+#ssl_context = ssl.create_default_context(cafile=certifi.where())
+
 
 # Load KV file
 KV = """
@@ -51,6 +66,7 @@ log_queue = queue.Queue()
 @bot.event
 async def on_ready():
     log_queue.put(f"Logged in as {bot.user}")
+    log_queue.put("Bot is ready and session initialized.")
 
 @bot.event
 async def on_connect():
@@ -73,13 +89,17 @@ async def load_cogs():
                 log_queue.put(f"Failed to load cog {cog_name}: {str(e)}")
 
 async def bot_start():
+    """Start the Discord bot with an aiohttp session."""
     try:
-        await load_cogs()  # Load cogs before starting the bot
-        await bot.start(discord_token)  # Use token from config.ini
+        async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=ssl_context)) as session:
+            bot.session = session  # Attach aiohttp session to the bot
+            await load_cogs()  # Load cogs before starting the bot
+            await bot.start(discord_token)  # Use token from config.ini
     except discord.LoginFailure:
         log_queue.put("Failed to login. Check your Discord token.")
 
 def start_discord_bot():
+    """Run the bot start coroutine."""
     asyncio.run(bot_start())
 
 # Main App

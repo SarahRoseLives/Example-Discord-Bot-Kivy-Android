@@ -13,7 +13,7 @@ package.domain = org.test
 source.dir = .
 
 # (list) Source files to include (let empty to include all the files)
-source.include_exts = py,png,jpg,kv,atlas,mp3,ini
+source.include_exts = py,png,jpg,kv,atlas,mp3,ini,pem
 
 # (list) List of inclusions using pattern matching
 #source.include_patterns = assets/*,images/*.png
@@ -38,7 +38,7 @@ version = 0.1
 # (list) Application requirements
 # comma separated e.g. requirements = sqlite3,kivy
 
-requirements = python3,kivy==2.3.0,https://files.pythonhosted.org/packages/20/81/0b1154f5e581d5910702d9fadb3217f56cb186f72c8b36de0271e7ff9b5c/kivymd-1.2.0.tar.gz,discord
+requirements = python3,kivy==2.3.0,https://files.pythonhosted.org/packages/20/81/0b1154f5e581d5910702d9fadb3217f56cb186f72c8b36de0271e7ff9b5c/kivymd-1.2.0.tar.gz, discord.py, aiohttp, multidict, attrs, yarl, propcache, async_timeout, charset-normalizer==2.1.1, aiosignal, frozenlist, certifi
 #sudo apt-get install libsdl2-dev
 #pip install --upgrade cython~=0.29.36
 #https://matham.github.io/ffpyplayer/installation.html

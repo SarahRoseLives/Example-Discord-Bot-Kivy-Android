@@ -3,9 +3,6 @@ from kivy.lang import Builder
 from kivymd.app import MDApp
 from kivy.clock import Clock, mainthread
 from threading import Thread
-
-from requests import session
-
 from discord.ext import commands
 import discord
 import asyncio
@@ -15,24 +12,25 @@ import ssl
 import certifi
 import aiohttp
 
-# Path to the certificate in the assets folder
-cert_path = 'discord-cert.pem'
-
-
 # Set up SSL context using the bundled cert file
-ssl_context = ssl.create_default_context(cafile=cert_path)
-#ssl_context = ssl.create_default_context(cafile=certifi.where())
-
+ssl_context = ssl.create_default_context(cafile=certifi.where())
 
 # Load KV file
 KV = """
 MDScreen:
-    MDLabel:
-        id: log_label
-        text: "Starting Discord bot..."
-        halign: "center"
-        valign: "middle"
-        font_style: "H6"
+    MDBoxLayout:
+        orientation: "vertical"
+
+        MDLabel:
+            text: "Discord Bot Logs"
+            halign: "center"
+            font_style: "H6"
+            size_hint_y: None
+            height: self.texture_size[1]
+
+        ScrollView:
+            MDList:
+                id: log_list
 """
 
 # Configuration Setup
@@ -66,7 +64,6 @@ log_queue = queue.Queue()
 @bot.event
 async def on_ready():
     log_queue.put(f"Logged in as {bot.user}")
-    log_queue.put("Bot is ready and session initialized.")
 
 @bot.event
 async def on_connect():
@@ -77,26 +74,31 @@ async def on_disconnect():
     log_queue.put("Disconnected from Discord!")
 
 async def load_cogs():
-    """Load all cogs from the 'cogs' folder."""
-    cogs_dir = os.path.join(os.path.dirname(__file__), "cogs")
-    for filename in os.listdir(cogs_dir):
-        if filename.endswith(".py"):
-            cog_name = f"cogs.{filename[:-3]}"  # Remove '.py' and add folder name
-            try:
-                await bot.load_extension(cog_name)
-                log_queue.put(f"Loaded cog: {cog_name}")
-            except Exception as e:
-                log_queue.put(f"Failed to load cog {cog_name}: {str(e)}")
+    current_dir = os.path.abspath(os.path.dirname(__file__))
+    cogs_directory = os.path.join(current_dir, 'cogs')
+    for filename in os.listdir(cogs_directory):
+        if filename.endswith('.pyc'):
+            await bot.load_extension(f'cogs.{filename[:-4]}')
+
 
 async def bot_start():
-    """Start the Discord bot with an aiohttp session."""
+    """Start the Discord bot using a custom SSL context."""
     try:
-        async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=ssl_context)) as session:
-            bot.session = session  # Attach aiohttp session to the bot
-            await load_cogs()  # Load cogs before starting the bot
-            await bot.start(discord_token)  # Use token from config.ini
+        # Create a custom connector with the SSL context
+        connector = aiohttp.TCPConnector(ssl=ssl_context)
+
+        # Patch the bot's HTTP session with the custom connector
+        bot.http.connector = connector
+
+        # Load cogs before starting the bot
+        await load_cogs()
+
+        # Start the bot
+        await bot.start(discord_token)
     except discord.LoginFailure:
         log_queue.put("Failed to login. Check your Discord token.")
+    except Exception as e:
+        log_queue.put(f"Unexpected error: {str(e)}")
 
 def start_discord_bot():
     """Run the bot start coroutine."""
@@ -111,8 +113,15 @@ class BotLogApp(MDApp):
 
     @mainthread
     def update_log_label(self, text):
-        """Safely update the log_label text on the UI thread."""
-        self.root.ids.log_label.text = text
+        """Safely add log messages to the ScrollView's MDList."""
+        from kivymd.uix.list import OneLineListItem
+
+        log_item = OneLineListItem(text=text)
+        self.root.ids.log_list.add_widget(log_item)
+
+        # Auto-scroll to the bottom
+        scroll_view = self.root.ids.log_list.parent
+        scroll_view.scroll_y = 0  # Scroll to bottom
 
     def check_logs(self, dt):
         """Check the log queue and update the Kivy UI."""
